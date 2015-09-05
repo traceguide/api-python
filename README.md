@@ -26,6 +26,8 @@ runtime.finish_span(span)
 
 ## License
 
-MIT
+[The MIT License](https://opensource.org/licenses/MIT).
+
+Copyright (c) 2015, Resonance Labs.
 
 

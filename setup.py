@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='traceguide',
-    version='1.0.6',
+    version='1.0.7',
     description='Official Traceguide Library for Python',
     long_description='',
     author='Resonance Labs, Inc.',
