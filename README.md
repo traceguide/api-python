@@ -2,31 +2,35 @@
 
 ## Installation
 
-TBD.
+```
+apt-get install python-dev
+pip install traceguide
+```
+
+**Important Note:**: The Traceguide secure connection uses [Server Name Identification (SNI)](https://en.wikipedia.org/wiki/Server_Name_Indication#No_support).  This requires Python 2.7.9 or greater.
+
 
 ## Getting Started
 
-```
-from traceguide import instrument
+```python
+# Retrieve Runtime singleton
+runtime = instrument.get_runtime("my_server", "{{my_access_token}}")
 
-# Retrieve Runtime singleton - Option 1
-runtime = get_runtime(YOUR_GROUP_NAME, YOUR_ACCESS_TOKEN)
+# Send a regular global load along with a data payload
+favoriteNumbers = [ 42, 17, 1984 ]
+runtime.log('Hello Runtime!', favoriteNumbers)
 
-# Create Runtime instance - Option 2
-runtime = instrument.Runtime(YOUR_GROUP_NAME, YOUR_ACCESS_TOKEN)
-
-# Send a log to the Traceguide server
-runtime.log('Log Statement', YOUR_LOG_PAYLOAD)
-
-# Send a span with JoinId to the Traceguide server
-span = runtime.start_span('python_server/test_app')
+# Send a span record for a given operation 
+span = runtime.span('trivial/sample_span')
 span.add_join_id('end_user_id', 'john_smith')
-runtime.finish_span(span)
+favoriteNumberSet = set(favoriteNumbers)
+span.infof('Hello Span!', favoriteNumberSet)
+span.end()
 ```
 
 ## License
 
-[The MIT License](https://opensource.org/licenses/MIT).
+[The MIT License](LICENSE).
 
 Copyright (c) 2015, Resonance Labs.
 

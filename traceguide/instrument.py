@@ -20,7 +20,7 @@ _singleton_runtime = None
 _singleton_mutex = threading.Lock()
 
 def get_runtime(group_name='', access_token='', secure=True,
-                service_host="traceguide-api.mttr.to", service_port=9997,
+                service_host="api.traceguide.io", service_port=9997,
                 debugger=None):
     """ Return singleton instance of the Runtime.
 
@@ -44,6 +44,55 @@ def get_runtime(group_name='', access_token='', secure=True,
                                          service_host, service_port, debugger)
         return _singleton_runtime
 
+def initialize(group_name='', access_token='', secure=True,
+               service_host="api.traceguide.io", service_port=9997,
+               debugger=None):
+    """ Initializes the default runtime
+
+        All calls after the first successful call to this function will be
+        ignored.
+    """
+    get_runtime(group_name, access_token, secure, service_host, service_port, debugger)
+
+def span(name):
+    """ Calls span() on the default runtime.
+    """
+    return get_runtime().span(name)
+
+def infof(fmt, *args, **kwargs):
+    """ Calls infof() on the default runtime.
+    """
+    parsed = util._parse_level_log_kwargs(**kwargs)
+    get_runtime()._level_log(constants.INFO_LOG, parsed.get(constants.PAYLOAD),
+                             parsed.get(constants.SPAN_GUID), fmt, args)
+
+def warnf(fmt, *args, **kwargs):
+    """ Calls warnf() on the default runtime.
+    """
+    parsed = util._parse_level_log_kwargs(**kwargs)
+    get_runtime()._level_log(constants.WARN_LOG, parsed.get(constants.PAYLOAD),
+                             parsed.get(constants.SPAN_GUID), fmt, args)
+
+def errorf(fmt, *args, **kwargs):
+    """ Calls errorf() on the default runtime.
+    """
+    parsed = util._parse_level_log_kwargs(**kwargs)
+    get_runtime()._level_log(constants.ERR_LOG, parsed.get(constants.PAYLOAD),
+                             parsed.get(constants.SPAN_GUID), fmt, args)
+
+def fatalf(fmt, *args, **kwargs):
+    """ Calls fatalf() on the default runtime.
+    """
+    parsed = util._parse_level_log_kwargs(**kwargs)
+    get_runtime()._level_log(constants.FATAL_LOG, parsed.get(constants.PAYLOAD),
+                             parsed.get(constants.SPAN_GUID), fmt, args)
+
+def flush():
+    """ Calls flush() on the default runtime.
+    """
+    get_runtime().flush()
+
+
 class Runtime(object):
     """ Instances of Runtime are used to sends logs and spans to the server.
 
@@ -57,8 +106,8 @@ class Runtime(object):
         Note: debugger parameter is for internal testing purposes only.
     """
     def __init__(self, group_name, access_token,
-                 secure=True, service_host="traceguide-api.mttr.to",
-                 service_port=9998, debugger=None):
+                 secure=True, service_host="api.traceguide.io",
+                 service_port=9997, debugger=None):
         # Thrift runtime configuration
         guid = util._generate_guid()
         timestamp = util._now_micros()
@@ -218,7 +267,7 @@ class Runtime(object):
 
             Every few seconds automatic reports are sent to the server.
             However, one can also manually send reports to the server.
-            Calling flush () will ensure that any current unreported data
+            Calling flush() will ensure that any current unreported data
             will be immediately sent to the host server.
         """
         if self._disabled_runtime:
@@ -254,7 +303,9 @@ class Runtime(object):
                 for command in resp.commands:
                     if command.disable:
                         self.disable()
-            except (Thrift.TException, socket_error):
+            except Thrift.TException:
+                self._store_on_disconnect(report_request)
+            except socket_error:
                 self._store_on_disconnect(report_request)
 
     def _construct_report_request(self):

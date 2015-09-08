@@ -1,2 +1,1 @@
-all = ['instrument']
-
+__all__ = ['instrument']
