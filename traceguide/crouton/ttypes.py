@@ -99,6 +99,88 @@ class KeyValue:
   def __ne__(self, other):
     return not (self == other)
 
+class NamedCounter:
+  """
+  Attributes:
+   - Name
+   - Value
+  """
+
+  thrift_spec = (
+    None, # 0
+    (1, TType.STRING, 'Name', None, None, ), # 1
+    (2, TType.I64, 'Value', None, None, ), # 2
+  )
+
+  def __init__(self, Name=None, Value=None,):
+    self.Name = Name
+    self.Value = Value
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 1:
+        if ftype == TType.STRING:
+          self.Name = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 2:
+        if ftype == TType.I64:
+          self.Value = iprot.readI64();
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('NamedCounter')
+    if self.Name is not None:
+      oprot.writeFieldBegin('Name', TType.STRING, 1)
+      oprot.writeString(self.Name)
+      oprot.writeFieldEnd()
+    if self.Value is not None:
+      oprot.writeFieldBegin('Value', TType.I64, 2)
+      oprot.writeI64(self.Value)
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    if self.Name is None:
+      raise TProtocol.TProtocolException(message='Required field Name is unset!')
+    if self.Value is None:
+      raise TProtocol.TProtocolException(message='Required field Value is unset!')
+    return
+
+
+  def __hash__(self):
+    value = 17
+    value = (value * 31) ^ hash(self.Name)
+    value = (value * 31) ^ hash(self.Value)
+    return value
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
 class Runtime:
   """
   Attributes:
@@ -925,7 +1007,9 @@ class ReportRequest:
    - span_records
    - log_records
    - timestamp_offset_micros
-   - discarded_log_record_samples
+   - oldest_micros
+   - youngest_micros
+   - counters
   """
 
   thrift_spec = (
@@ -935,15 +1019,20 @@ class ReportRequest:
     (3, TType.LIST, 'span_records', (TType.STRUCT,(SpanRecord, SpanRecord.thrift_spec)), None, ), # 3
     (4, TType.LIST, 'log_records', (TType.STRUCT,(LogRecord, LogRecord.thrift_spec)), None, ), # 4
     (5, TType.I64, 'timestamp_offset_micros', None, None, ), # 5
-    (6, TType.LIST, 'discarded_log_record_samples', (TType.STRUCT,(SampleCount, SampleCount.thrift_spec)), None, ), # 6
+    None, # 6
+    (7, TType.I64, 'oldest_micros', None, None, ), # 7
+    (8, TType.I64, 'youngest_micros', None, None, ), # 8
+    (9, TType.LIST, 'counters', (TType.STRUCT,(NamedCounter, NamedCounter.thrift_spec)), None, ), # 9
   )
 
-  def __init__(self, runtime=None, span_records=None, log_records=None, timestamp_offset_micros=None, discarded_log_record_samples=None,):
+  def __init__(self, runtime=None, span_records=None, log_records=None, timestamp_offset_micros=None, oldest_micros=None, youngest_micros=None, counters=None,):
     self.runtime = runtime
     self.span_records = span_records
     self.log_records = log_records
     self.timestamp_offset_micros = timestamp_offset_micros
-    self.discarded_log_record_samples = discarded_log_record_samples
+    self.oldest_micros = oldest_micros
+    self.youngest_micros = youngest_micros
+    self.counters = counters
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -987,14 +1076,24 @@ class ReportRequest:
           self.timestamp_offset_micros = iprot.readI64();
         else:
           iprot.skip(ftype)
-      elif fid == 6:
+      elif fid == 7:
+        if ftype == TType.I64:
+          self.oldest_micros = iprot.readI64();
+        else:
+          iprot.skip(ftype)
+      elif fid == 8:
+        if ftype == TType.I64:
+          self.youngest_micros = iprot.readI64();
+        else:
+          iprot.skip(ftype)
+      elif fid == 9:
         if ftype == TType.LIST:
-          self.discarded_log_record_samples = []
+          self.counters = []
           (_etype43, _size40) = iprot.readListBegin()
           for _i44 in xrange(_size40):
-            _elem45 = SampleCount()
+            _elem45 = NamedCounter()
             _elem45.read(iprot)
-            self.discarded_log_record_samples.append(_elem45)
+            self.counters.append(_elem45)
           iprot.readListEnd()
         else:
           iprot.skip(ftype)
@@ -1030,10 +1129,18 @@ class ReportRequest:
       oprot.writeFieldBegin('timestamp_offset_micros', TType.I64, 5)
       oprot.writeI64(self.timestamp_offset_micros)
       oprot.writeFieldEnd()
-    if self.discarded_log_record_samples is not None:
-      oprot.writeFieldBegin('discarded_log_record_samples', TType.LIST, 6)
-      oprot.writeListBegin(TType.STRUCT, len(self.discarded_log_record_samples))
-      for iter48 in self.discarded_log_record_samples:
+    if self.oldest_micros is not None:
+      oprot.writeFieldBegin('oldest_micros', TType.I64, 7)
+      oprot.writeI64(self.oldest_micros)
+      oprot.writeFieldEnd()
+    if self.youngest_micros is not None:
+      oprot.writeFieldBegin('youngest_micros', TType.I64, 8)
+      oprot.writeI64(self.youngest_micros)
+      oprot.writeFieldEnd()
+    if self.counters is not None:
+      oprot.writeFieldBegin('counters', TType.LIST, 9)
+      oprot.writeListBegin(TType.STRUCT, len(self.counters))
+      for iter48 in self.counters:
         iter48.write(oprot)
       oprot.writeListEnd()
       oprot.writeFieldEnd()
@@ -1050,7 +1157,9 @@ class ReportRequest:
     value = (value * 31) ^ hash(self.span_records)
     value = (value * 31) ^ hash(self.log_records)
     value = (value * 31) ^ hash(self.timestamp_offset_micros)
-    value = (value * 31) ^ hash(self.discarded_log_record_samples)
+    value = (value * 31) ^ hash(self.oldest_micros)
+    value = (value * 31) ^ hash(self.youngest_micros)
+    value = (value * 31) ^ hash(self.counters)
     return value
 
   def __repr__(self):

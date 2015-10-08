@@ -374,6 +374,10 @@ class Runtime(object):
 
 class ActiveSpan(object):
     """ Wrapper class for thrift span_record.
+
+        Can also be used as a context manager, like so:
+        >>> with instrument.span("subsystem/my_operation) as span:
+        ...   span.add_join_id(...)
     """
     def __init__(self, runtime, span_record):
         self._runtime = runtime
@@ -382,6 +386,15 @@ class ActiveSpan(object):
             self.span_guid = span_record.span_guid
         else:
             self.span_guid = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type:
+            self.errorf('Uncaught exception thrown in span: %s, %s', exc_type, exc_value)
+        self.end()
+        return False  # A True would suppress the exeception
 
     def add_join_id(self, key, val):
         """ Add a JoinID to the active span.
