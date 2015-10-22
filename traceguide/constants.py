@@ -4,8 +4,8 @@
 # traceguide_runtime constants
 FLUSH_THREAD_NAME = 'Flush Thread'
 FLUSH_PERIOD_SECS = 2.5
-MAX_LOGS = 1000
-MAX_SPANS = 1000
+DEFAULT_MAX_LOG_RECORDS = 1000
+DEFAULT_MAX_SPAN_RECORDS = 1000
 
 # Log Keywords
 PAYLOAD = 'payload'

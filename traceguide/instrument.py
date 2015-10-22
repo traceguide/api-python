@@ -19,8 +19,13 @@ from traceguide import constants, util, connection as conn
 _singleton_runtime = None
 _singleton_mutex = threading.Lock()
 
-def get_runtime(group_name='', access_token='', secure=True,
-                service_host="api.traceguide.io", service_port=9997,
+def get_runtime(group_name='',
+                access_token='',
+                secure=True,
+                service_host="api.traceguide.io",
+                service_port=9997,
+                max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
+                max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
                 debugger=None):
     """ Return singleton instance of the Runtime.
 
@@ -28,8 +33,10 @@ def get_runtime(group_name='', access_token='', secure=True,
             is being tracked
         :param str access_token: project's access token
         :param bool secure: whether HTTP connection is secure
-        :param str service_host: Traceguide server host
-        :param int service_port: Traceguide server port
+        :param str service_host: Service host name
+        :param int service_port: Service port number
+        :param int max_log_records: Maximum number of log records to buffer
+        :param int max_span_records: Maximum number of spans records to buffer
 
         On the first call to get_runtime provide the listed parameters in order
         to instantiate and return the singleton. After the first call, all
@@ -40,19 +47,37 @@ def get_runtime(group_name='', access_token='', secure=True,
     global _singleton_runtime
     with _singleton_mutex:
         if _singleton_runtime is None:
-            _singleton_runtime = Runtime(group_name, access_token, secure,
-                                         service_host, service_port, debugger)
+            _singleton_runtime = Runtime(group_name,
+                                         access_token,
+                                         secure=secure,
+                                         service_host=service_host,
+                                         service_port=service_port,
+                                         max_log_records=max_log_records,
+                                         max_span_records=max_span_records,
+                                         debugger=debugger)
         return _singleton_runtime
 
-def initialize(group_name='', access_token='', secure=True,
-               service_host="api.traceguide.io", service_port=9997,
+def initialize(group_name='',
+               access_token='',
+               secure=True,
+               service_host="api.traceguide.io",
+               service_port=9997,
+               max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
+               max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
                debugger=None):
     """ Initializes the default runtime
 
         All calls after the first successful call to this function will be
         ignored.
     """
-    get_runtime(group_name, access_token, secure, service_host, service_port, debugger)
+    get_runtime(group_name,
+                access_token,
+                secure=secure,
+                service_host=service_host,
+                service_port=service_port,
+                max_log_records=max_log_records,
+                max_span_records=max_span_records,
+                debugger=debugger)
 
 def span(name):
     """ Calls span() on the default runtime.
@@ -63,28 +88,28 @@ def infof(fmt, *args, **kwargs):
     """ Calls infof() on the default runtime.
     """
     parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.INFO_LOG, parsed.get(constants.PAYLOAD),
+    get_runtime()._level_log(constants.INFO_LOG, False, parsed.get(constants.PAYLOAD),
                              parsed.get(constants.SPAN_GUID), fmt, args)
 
 def warnf(fmt, *args, **kwargs):
     """ Calls warnf() on the default runtime.
     """
     parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.WARN_LOG, parsed.get(constants.PAYLOAD),
+    get_runtime()._level_log(constants.WARN_LOG, False, parsed.get(constants.PAYLOAD),
                              parsed.get(constants.SPAN_GUID), fmt, args)
 
 def errorf(fmt, *args, **kwargs):
     """ Calls errorf() on the default runtime.
     """
     parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.ERR_LOG, parsed.get(constants.PAYLOAD),
+    get_runtime()._level_log(constants.ERR_LOG, True, parsed.get(constants.PAYLOAD),
                              parsed.get(constants.SPAN_GUID), fmt, args)
 
 def fatalf(fmt, *args, **kwargs):
     """ Calls fatalf() on the default runtime.
     """
     parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.FATAL_LOG, parsed.get(constants.PAYLOAD),
+    get_runtime()._level_log(constants.FATAL_LOG, True, parsed.get(constants.PAYLOAD),
                              parsed.get(constants.SPAN_GUID), fmt, args)
 
 def flush():
@@ -100,14 +125,22 @@ class Runtime(object):
             is being tracked
         :param str access_token: project's access token
         :param bool secure: whether HTTP connection is secure
-        :param str service_host: Traceguide server host
-        :param int service_port: Traceguide server port
+        :param str service_host: Service host name
+        :param int service_port: Service port number
+        :param int max_log_records: Maximum number of log records to buffer
+        :param int max_span_records: Maximum number of spans records to buffer
 
         Note: debugger parameter is for internal testing purposes only.
     """
-    def __init__(self, group_name, access_token,
-                 secure=True, service_host="api.traceguide.io",
-                 service_port=9997, debugger=None):
+    def __init__(self,
+                 group_name,
+                 access_token,
+                 secure=True,
+                 service_host="api.traceguide.io",
+                 service_port=9997,
+                 max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
+                 max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
+                 debugger=None):
         # Thrift runtime configuration
         guid = util._generate_guid()
         timestamp = util._now_micros()
@@ -118,6 +151,12 @@ class Runtime(object):
         self._auth = ttypes.Auth(access_token)
         self._mutex = threading.Lock()
         self._log_records, self._span_records = ([] for i in range(2))
+
+        self._max_log_records = max_log_records
+        self._max_span_records = max_span_records
+
+        if self._max_log_records <= 0:
+            raise Exception()
 
         # Only establish timer-based flush if no debugger is provided
         self._debugger = debugger
@@ -173,7 +212,7 @@ class Runtime(object):
             :param span_guid: optional span_guid to associate log with a span
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        self._level_log(constants.INFO_LOG, parsed.get(constants.PAYLOAD),
+        self._level_log(constants.INFO_LOG, False, parsed.get(constants.PAYLOAD),
                         parsed.get(constants.SPAN_GUID), fmt, args)
 
     def warnf(self, fmt, *args, **kwargs):
@@ -185,7 +224,7 @@ class Runtime(object):
             :param span_guid: optional span_guid to associate log with a span
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        self._level_log(constants.WARN_LOG, parsed.get(constants.PAYLOAD),
+        self._level_log(constants.WARN_LOG, False, parsed.get(constants.PAYLOAD),
                         parsed.get(constants.SPAN_GUID), fmt, args)
 
     def errorf(self, fmt, *args, **kwargs):
@@ -197,7 +236,7 @@ class Runtime(object):
             :param span_guid: optional span_guid to associate log with a span
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        self._level_log(constants.ERR_LOG, parsed.get(constants.PAYLOAD),
+        self._level_log(constants.ERR_LOG, True, parsed.get(constants.PAYLOAD),
                         parsed.get(constants.SPAN_GUID), fmt, args)
 
     def fatalf(self, fmt, *args, **kwargs):
@@ -209,12 +248,12 @@ class Runtime(object):
             :param span_guid: optional span_guid to associate log with a span
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        fmt_str = self._level_log(constants.FATAL_LOG,
+        fmt_str = self._level_log(constants.FATAL_LOG, True,
                                   parsed.get(constants.PAYLOAD),
                                   parsed.get(constants.SPAN_GUID), fmt, args)
         sys.exit(fmt_str)
 
-    def log(self, log_statement, payload=None, level=None, span_guid=None):
+    def log(self, log_statement, payload=None, level=None, error_flag=False, span_guid=None):
         """ Record a log statement with optional payload and importance level.
 
             :param str logStatement: log text
@@ -225,13 +264,16 @@ class Runtime(object):
             :param char level: for internal use only
                 importance level of log - 'I' info, 'W' warning, 'E' error,
                 'F' fatal
+            :param bool error_flag: indicates that this log is directly related
+                to an error
         """
         if self._disabled_runtime:
             return
         timestamp = util._now_micros()
         guid = self._runtime.guid
         log_record = ttypes.LogRecord(timestamp, guid, message=log_statement,
-                                      level=level, span_guid=span_guid)
+                                      level=level, error_flag=error_flag,
+                                      span_guid=span_guid)
 
         if payload is not None:
             try:
@@ -318,7 +360,7 @@ class Runtime(object):
             self._log_records = []
             return report
 
-    def _level_log(self, level, payload, span_guid, fmt, *args):
+    def _level_log(self, level, error_flag, payload, span_guid, fmt, *args):
         """ Logging with levels.
         """
         if self._disabled_runtime:
@@ -332,7 +374,7 @@ class Runtime(object):
         except TypeError:
             fmt_str = ':'.join(['[INVALID FORMAT STRING]', fmt])
 
-        self.log(fmt_str, payload, level, span_guid)
+        self.log(fmt_str, payload, level, error_flag, span_guid)
         return fmt_str
 
     def _add_log(self, log):
@@ -340,8 +382,9 @@ class Runtime(object):
             been reached.
         """
         with self._mutex:
-            if len(self._log_records) is constants.MAX_LOGS:
-                delete_index = random.randint(0, constants.MAX_LOGS - 1)
+            current_len = len(self._log_records)
+            if current_len >= self._max_log_records:
+                delete_index = random.randint(0, current_len - 1)
                 self._log_records[delete_index] = log
             else:
                 self._log_records.append(log)
@@ -351,8 +394,9 @@ class Runtime(object):
             been reached.
         """
         with self._mutex:
-            if len(self._span_records) is constants.MAX_SPANS:
-                delete_index = random.randint(0, constants.MAX_SPANS - 1)
+            current_len = len(self._span_records)
+            if len(self._span_records) >= self._max_span_records:
+                delete_index = random.randint(0, current_len - 1)
                 self._span_records[delete_index] = span
             else:
                 self._span_records.append(span)
@@ -396,6 +440,15 @@ class ActiveSpan(object):
         self.end()
         return False  # A True would suppress the exeception
 
+    def guid(self):
+        """ Return the GUID of the active span
+
+            :return: the string guid of the active span
+        """
+        if self._span_record is None:
+            return ""
+        return self._span_record.span_guid
+
     def add_join_id(self, key, val):
         """ Add a JoinID to the active span.
 
@@ -431,7 +484,7 @@ class ActiveSpan(object):
             :param payload: optional payload
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        self._runtime._level_log(constants.INFO_LOG,
+        self._runtime._level_log(constants.INFO_LOG, False,
                                  parsed.get(constants.PAYLOAD),
                                  self.span_guid, fmt, args)
 
@@ -443,7 +496,7 @@ class ActiveSpan(object):
             :param payload: optional payload
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        self._runtime._level_log(constants.WARN_LOG,
+        self._runtime._level_log(constants.WARN_LOG, False,
                                  parsed.get(constants.PAYLOAD),
                                  self.span_guid, fmt, args)
 
@@ -456,7 +509,8 @@ class ActiveSpan(object):
 
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        self._runtime._level_log(constants.ERR_LOG,
+        self._span_record.error_flag = True
+        self._runtime._level_log(constants.ERR_LOG, True,
                                  parsed.get(constants.PAYLOAD),
                                  self.span_guid, fmt, args)
 
@@ -469,8 +523,8 @@ class ActiveSpan(object):
             :param payload: optional payload
         """
         parsed = util._parse_level_log_kwargs(**kwargs)
-        fmt_str = self._runtime._level_log(constants.FATAL_LOG,
+        self._span_record.error_flag = True
+        fmt_str = self._runtime._level_log(constants.FATAL_LOG, True,
                                            parsed.get(constants.PAYLOAD),
                                            self.span_guid, fmt, args)
         sys.exit(fmt_str)
-

@@ -602,7 +602,7 @@ class SpanRecord:
    - oldest_micros
    - youngest_micros
    - attributes
-   - deprecated_error_text
+   - error_flag
   """
 
   thrift_spec = (
@@ -613,11 +613,12 @@ class SpanRecord:
     (4, TType.LIST, 'join_ids', (TType.STRUCT,(TraceJoinId, TraceJoinId.thrift_spec)), None, ), # 4
     (5, TType.I64, 'oldest_micros', None, None, ), # 5
     (6, TType.I64, 'youngest_micros', None, None, ), # 6
-    (7, TType.STRING, 'deprecated_error_text', None, None, ), # 7
+    None, # 7
     (8, TType.LIST, 'attributes', (TType.STRUCT,(KeyValue, KeyValue.thrift_spec)), None, ), # 8
+    (9, TType.BOOL, 'error_flag', None, None, ), # 9
   )
 
-  def __init__(self, span_guid=None, runtime_guid=None, span_name=None, join_ids=None, oldest_micros=None, youngest_micros=None, attributes=None, deprecated_error_text=None,):
+  def __init__(self, span_guid=None, runtime_guid=None, span_name=None, join_ids=None, oldest_micros=None, youngest_micros=None, attributes=None, error_flag=None,):
     self.span_guid = span_guid
     self.runtime_guid = runtime_guid
     self.span_name = span_name
@@ -625,7 +626,7 @@ class SpanRecord:
     self.oldest_micros = oldest_micros
     self.youngest_micros = youngest_micros
     self.attributes = attributes
-    self.deprecated_error_text = deprecated_error_text
+    self.error_flag = error_flag
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -683,9 +684,9 @@ class SpanRecord:
           iprot.readListEnd()
         else:
           iprot.skip(ftype)
-      elif fid == 7:
-        if ftype == TType.STRING:
-          self.deprecated_error_text = iprot.readString();
+      elif fid == 9:
+        if ftype == TType.BOOL:
+          self.error_flag = iprot.readBool();
         else:
           iprot.skip(ftype)
       else:
@@ -725,16 +726,16 @@ class SpanRecord:
       oprot.writeFieldBegin('youngest_micros', TType.I64, 6)
       oprot.writeI64(self.youngest_micros)
       oprot.writeFieldEnd()
-    if self.deprecated_error_text is not None:
-      oprot.writeFieldBegin('deprecated_error_text', TType.STRING, 7)
-      oprot.writeString(self.deprecated_error_text)
-      oprot.writeFieldEnd()
     if self.attributes is not None:
       oprot.writeFieldBegin('attributes', TType.LIST, 8)
       oprot.writeListBegin(TType.STRUCT, len(self.attributes))
       for iter27 in self.attributes:
         iter27.write(oprot)
       oprot.writeListEnd()
+      oprot.writeFieldEnd()
+    if self.error_flag is not None:
+      oprot.writeFieldBegin('error_flag', TType.BOOL, 9)
+      oprot.writeBool(self.error_flag)
       oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
@@ -752,7 +753,7 @@ class SpanRecord:
     value = (value * 31) ^ hash(self.oldest_micros)
     value = (value * 31) ^ hash(self.youngest_micros)
     value = (value * 31) ^ hash(self.attributes)
-    value = (value * 31) ^ hash(self.deprecated_error_text)
+    value = (value * 31) ^ hash(self.error_flag)
     return value
 
   def __repr__(self):
