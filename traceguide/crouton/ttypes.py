@@ -1244,17 +1244,20 @@ class ReportResponse:
   Attributes:
    - commands
    - timing
+   - errors
   """
 
   thrift_spec = (
     None, # 0
     (1, TType.LIST, 'commands', (TType.STRUCT,(Command, Command.thrift_spec)), None, ), # 1
     (2, TType.STRUCT, 'timing', (Timing, Timing.thrift_spec), None, ), # 2
+    (3, TType.LIST, 'errors', (TType.STRING,None), None, ), # 3
   )
 
-  def __init__(self, commands=None, timing=None,):
+  def __init__(self, commands=None, timing=None, errors=None,):
     self.commands = commands
     self.timing = timing
+    self.errors = errors
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -1282,6 +1285,16 @@ class ReportResponse:
           self.timing.read(iprot)
         else:
           iprot.skip(ftype)
+      elif fid == 3:
+        if ftype == TType.LIST:
+          self.errors = []
+          (_etype58, _size55) = iprot.readListBegin()
+          for _i59 in xrange(_size55):
+            _elem60 = iprot.readString();
+            self.errors.append(_elem60)
+          iprot.readListEnd()
+        else:
+          iprot.skip(ftype)
       else:
         iprot.skip(ftype)
       iprot.readFieldEnd()
@@ -1295,13 +1308,20 @@ class ReportResponse:
     if self.commands is not None:
       oprot.writeFieldBegin('commands', TType.LIST, 1)
       oprot.writeListBegin(TType.STRUCT, len(self.commands))
-      for iter55 in self.commands:
-        iter55.write(oprot)
+      for iter61 in self.commands:
+        iter61.write(oprot)
       oprot.writeListEnd()
       oprot.writeFieldEnd()
     if self.timing is not None:
       oprot.writeFieldBegin('timing', TType.STRUCT, 2)
       self.timing.write(oprot)
+      oprot.writeFieldEnd()
+    if self.errors is not None:
+      oprot.writeFieldBegin('errors', TType.LIST, 3)
+      oprot.writeListBegin(TType.STRING, len(self.errors))
+      for iter62 in self.errors:
+        oprot.writeString(iter62)
+      oprot.writeListEnd()
       oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
@@ -1314,6 +1334,7 @@ class ReportResponse:
     value = 17
     value = (value * 31) ^ hash(self.commands)
     value = (value * 31) ^ hash(self.timing)
+    value = (value * 31) ^ hash(self.errors)
     return value
 
   def __repr__(self):
