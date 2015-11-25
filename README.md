@@ -13,18 +13,19 @@ pip install traceguide
 ## Getting Started
 
 ```python
+from traceguide import instrument
+
 # Retrieve Runtime singleton
-runtime = instrument.get_runtime("my_server", "{{my_access_token}}")
+runtime = instrument.get_runtime("python/my_server", "{your_access_token}")
 
 # Send a regular global load along with a data payload
 favoriteNumbers = [ 42, 17, 1984 ]
 runtime.log('Hello Runtime!', favoriteNumbers)
 
-# Send a span record for a given operation 
+# Send a span record for a given operation
 span = runtime.span('trivial/sample_span')
 span.add_join_id('end_user_id', 'john_smith')
-favoriteNumberSet = set(favoriteNumbers)
-span.infof('Hello Span!', favoriteNumberSet)
+span.infof('Hello %s!', 'span')
 span.end()
 ```
 
@@ -33,5 +34,3 @@ span.end()
 [The MIT License](LICENSE).
 
 Copyright (c) 2015, Resonance Labs.
-
-
