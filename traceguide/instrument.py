@@ -374,7 +374,15 @@ class Runtime(object):
         except TypeError:
             fmt_str = ':'.join(['[INVALID FORMAT STRING]', fmt])
 
-        self.log(fmt_str, payload, level, error_flag, span_guid)
+        merged = {}
+        if len(args[0]) > 0:
+            merged['arguments'] = list(args[0])
+        if payload != None:
+            merged['payload'] = payload
+        if len(merged) == 0:
+            merged = None
+
+        self.log(fmt_str, merged, level, error_flag, span_guid)
         return fmt_str
 
     def _add_log(self, log):

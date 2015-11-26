@@ -18,14 +18,15 @@ from traceguide import instrument
 # Retrieve Runtime singleton
 runtime = instrument.get_runtime("python/my_server", "{your_access_token}")
 
-# Send a regular global load along with a data payload
-favoriteNumbers = [ 42, 17, 1984 ]
-runtime.log('Hello Runtime!', favoriteNumbers)
 
 # Send a span record for a given operation
 span = runtime.span('trivial/sample_span')
 span.add_join_id('end_user_id', 'john_smith')
-span.infof('Hello %s!', 'span')
+
+# Log a formatted message along with an attached data payload
+favoriteNumbers = [ 42, 17, 1984 ]
+span.infof('Hello %s!', 'World', payload=favoriteNumbers)
+
 span.end()
 ```
 
