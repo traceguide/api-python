@@ -278,7 +278,8 @@ class Runtime(object):
         if payload is not None:
             try:
                 log_record.payload_json = \
-                    jsonpickle.encode(payload, constants.JSON_UNPICKLABLE,
+                    jsonpickle.encode(payload,
+                                      unpicklable=False,
                                       max_depth=constants.JSON_MAX_DEPTH)
             except:
                 log_record.payload_json = jsonpickle.encode(constants.JSON_FAIL)

@@ -1,5 +1,9 @@
 # api-python
 
+* [Installation](#installation)
+* [Getting Started](#getting-started)
+* [Common Tasks](#common-tasks)
+
 ## Installation
 
 ```
@@ -28,6 +32,34 @@ favoriteNumbers = [ 42, 17, 1984 ]
 span.infof('Hello %s!', 'World', payload=favoriteNumbers)
 
 span.end()
+```
+
+## Common Tasks
+
+### Adding payload data to log records
+
+Detailed payload data can (and should!) be attached to individual load statements. The format arguments passed in with the logging call are automatically captured as part of the log payload. The `payload` keyword argument can be used to capture additional payload data that is not used in the format string.
+
+**Example**
+
+```python
+eventName='post_shared'
+eventCount=510
+eventData={'post_title':'Ski Video', 'tags': set(['snow', 'winter'])}
+
+span.infof('Event type %s occurred %d times', eventName, eventCount, payload=eventData)
+```
+
+Will log a message of `'Event type post_shared occurred 510 times'` along with a JSON payload of:
+
+```json
+{
+  "arguments": [ "post_shared", 510 ],
+  "payload": {
+    "post_title": "Ski Video",
+    "tags": [ "winter", "snow" ]
+  }
+}
 ```
 
 ## License
