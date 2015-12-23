@@ -9,11 +9,11 @@ TraceJoinIds such as 'end_user_id' can be added to ActiveSpan objects.
 from thrift import Thrift
 
 from atexit import register
-import threading, jsonpickle, random, time, sys
+import threading, jsonpickle, random, time, sys, ssl
 from socket import error as socket_error
 
 from traceguide.crouton import ttypes
-from traceguide import constants, util, connection as conn
+from traceguide import constants, version as cruntime_version, util, connection as conn
 
 # Runtime Singleton
 _singleton_runtime = None
@@ -26,6 +26,7 @@ def get_runtime(group_name='',
                 service_port=9997,
                 max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
                 max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
+                certificate_verification=True,
                 debugger=None):
     """ Return singleton instance of the Runtime.
 
@@ -54,6 +55,7 @@ def get_runtime(group_name='',
                                          service_port=service_port,
                                          max_log_records=max_log_records,
                                          max_span_records=max_span_records,
+                                         certificate_verification=certificate_verification,
                                          debugger=debugger)
         return _singleton_runtime
 
@@ -64,6 +66,7 @@ def initialize(group_name='',
                service_port=9997,
                max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
                max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
+               certificate_verification=True,
                debugger=None):
     """ Initializes the default runtime
 
@@ -77,6 +80,7 @@ def initialize(group_name='',
                 service_port=service_port,
                 max_log_records=max_log_records,
                 max_span_records=max_span_records,
+                certificate_verification=certificate_verification,
                 debugger=debugger)
 
 def span(name):
@@ -129,6 +133,8 @@ class Runtime(object):
         :param int service_port: Service port number
         :param int max_log_records: Maximum number of log records to buffer
         :param int max_span_records: Maximum number of spans records to buffer
+        :param bool certificate_verification: if False, will ignore SSL
+            certification verification; intended for debugging purposes only
 
         Note: debugger parameter is for internal testing purposes only.
     """
@@ -140,11 +146,23 @@ class Runtime(object):
                  service_port=9997,
                  max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
                  max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
+                 certificate_verification=True,
                  debugger=None):
+
+        if certificate_verification == False:
+            ssl._create_default_https_context = ssl._create_unverified_context
+
         # Thrift runtime configuration
         guid = util._generate_guid()
         timestamp = util._now_micros()
-        self._runtime = ttypes.Runtime(guid, timestamp, group_name)
+
+        version = '.'.join(map(str, sys.version_info[0:3]))
+        attrs = [
+            ttypes.KeyValue("cruntime_platform", "python"),
+            ttypes.KeyValue("cruntime_version", cruntime_version.CRUNTIME_VERSION),
+            ttypes.KeyValue("python_version", version),
+        ]
+        self._runtime = ttypes.Runtime(guid, timestamp, group_name, attrs)
         self._service_url = util._service_url_from_hostport(secure,
                                                             service_host,
                                                             service_port)
