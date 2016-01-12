@@ -1,6 +1,6 @@
 docs/_build/*
 build/*
-traceguide.egg-info/*
+lightstep.egg-info/*
 dist/*
 .tox/*
 **.pyc

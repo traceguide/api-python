@@ -4,7 +4,7 @@
 from thrift import Thrift
 from thrift.transport import THttpClient
 from thrift.protocol import TBinaryProtocol
-from traceguide.crouton import ReportingService
+from .crouton import ReportingService
 
 class _Connection(object):
     """ Instances of _Connection are used to establish a connection to

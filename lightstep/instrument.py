@@ -6,14 +6,20 @@ and operations to Traceguide.
 :class:`~ActiveSpan` objects are created by the Runtime to store span info.
 TraceJoinIds such as 'end_user_id' can be added to ActiveSpan objects.
 """
-from thrift import Thrift
 
 from atexit import register
-import threading, jsonpickle, random, time, sys, ssl
+import threading
+import random
+import time
+import sys
+import ssl
 from socket import error as socket_error
 
-from traceguide.crouton import ttypes
-from traceguide import constants, version as cruntime_version, util, connection as conn
+import jsonpickle
+from thrift import Thrift
+
+from .crouton import ttypes
+from . import constants, version as cruntime_version, util, connection as conn
 
 # Runtime Singleton
 _singleton_runtime = None
@@ -149,7 +155,7 @@ class Runtime(object):
                  certificate_verification=True,
                  debugger=None):
 
-        if certificate_verification == False:
+        if certificate_verification is False:
             ssl._create_default_https_context = ssl._create_unverified_context
 
         # Thrift runtime configuration

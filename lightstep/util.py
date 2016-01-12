@@ -2,7 +2,7 @@
 """
 import uuid
 import time
-import traceguide.constants as constants
+from . import constants
 
 def _service_url_from_hostport(secure, host, port):
     """ Create appropriate service service URL.
