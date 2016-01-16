@@ -27,4 +27,4 @@ class LoggingReporter(NullReporter):
         self.logger = logger if logger else DEFAULT_LOGGER
 
     def report_span(self, span):
-        logging.warn('Reporting span %s, traceguide_span %s', pprint.pformat(vars(span)), pprint.pformat(vars(span.traceguide_span)))
+        logging.warn('Reporting span %s, lightstep_span %s', pprint.pformat(vars(span)), pprint.pformat(vars(span.lightstep_span)))

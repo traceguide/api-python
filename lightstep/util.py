@@ -6,7 +6,7 @@ from . import constants
 
 def _service_url_from_hostport(secure, host, port):
     """ Create appropriate service service URL.
-        Note: Currently, https does not work for lcoalhost. Though it does work
+        Note: Currently, https does not work for localhost. Though it does work
                 work on staging.
     """
     if secure:

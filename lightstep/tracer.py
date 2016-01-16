@@ -11,22 +11,22 @@ from . import instrument
 from . import reporter as reporter_module
 
 """
-Traceguide's implementation of the python OpenTracing API.
+LightStep's implementation of the python OpenTracing API.
 http://opentracing.io
 See the API definition for comments.
 """
 
-FIELD_NAME_TRACE_ID = 'Traceid'
-FIELD_NAME_SPAN_ID  = 'Spanid'
-""" Note that these strings are designed to be unchanged by the conversion into standard HTTP headers (which messes with capitalization).
+FIELD_NAME_TRACE_ID = 'traceid'
+FIELD_NAME_SPAN_ID  = 'spanid'
+""" Note that these strings are lowercase because HTTP headers mess with capitalization.
 """
 
 MAX_ID_BITS = 63
 
-def init_for_opentracing(reporter = None, **kwargs):
-    """ The one command you need to call to start tracing with traceguide in opentracing.
+def init_for_opentracing(*args, **kwargs):
+    """ The one command you need to call to start tracing with LightStep in opentracing.
 
-    :param reporter: the traceguide.reporter to use for reporting spans, can be None
+    :param bool debug: whether spans should be printed to the console
     :param str group_name: name identifying the type of service that is being tracked
     :param str access_token: project's access token
     :param bool secure: whether HTTP connection is secure
@@ -35,14 +35,14 @@ def init_for_opentracing(reporter = None, **kwargs):
     :param int max_log_records: Maximum number of log records to buffer
     :param int max_span_records: Maximum number of spans records to buffer
 
-    After the first time this method is called, all arguments except for reporter will be ignored.
+    After the first time this method is called, all arguments except for debug will be ignored.
     """
-    if reporter is None:
+    # Act on the debug param but also remove it from kwargs so that get_runtime() doesn't complain about unknown args.
+    if kwargs.pop('debug', False):
+        reporter = reporter_module.LoggingReporter()
+    else:
         reporter = reporter_module.NullReporter()
-    runtime = instrument.get_runtime(**kwargs)
-    opentracing.tracer = Tracer(
-        TraceContextSource(runtime),
-        reporter)
+    opentracing.tracer = Tracer(instrument.get_runtime(*args, **kwargs), reporter)
 
 class TraceContext(opentracing.standard.context.TraceContext):
 
@@ -87,7 +87,7 @@ class TraceContextSource(opentracing.TraceContextSource):
 class TraceContextEncoder(opentracing.TraceContextEncoder):
     def trace_context_to_text(self, trace_context):
         return {FIELD_NAME_TRACE_ID: str(trace_context.trace_id),
-                FIELD_NAME_SPAN_ID: str(trace_id.span_id)}, trace_context.trace_attributes
+                FIELD_NAME_SPAN_ID: str(trace_context.span_id)}, trace_context.trace_attributes
 
 class TraceContextDecoder(opentracing.TraceContextEncoder):
     def trace_context_from_text(self, trace_context_id, trace_attributes):
@@ -98,14 +98,15 @@ class TraceContextDecoder(opentracing.TraceContextEncoder):
 
 
 class Span(opentracing.Span):
-    def __init__(self, trace_context, tracer, traceguide_span):
+    def __init__(self, trace_context, tracer, lightstep_span, tags=None):
         super(Span, self).__init__(trace_context)
         self.tracer = tracer
         self.update_lock = threading.Lock()
-        self.traceguide_span = traceguide_span
+        self.lightstep_span = lightstep_span
         self.add_tag('trace_id', str(trace_context.trace_id))
-        #self.tags = []
-        #self.logs = []
+        if tags:
+            for k, v in tags.iteritems():
+                self.add_tag(k, v)
 
     # __enter__ and __exit__ are provided by opentracing.Span
 
@@ -113,39 +114,47 @@ class Span(opentracing.Span):
         return self.tracer.join_trace(operation_name, self.trace_context)
 
     def finish(self):
-        self.traceguide_span.end()
+        self.lightstep_span.end()
         self.tracer.report_span(self)
 
     def add_tag(self, key, value):
-        self.traceguide_span.add_join_id(key, value)
+        # TODO(misha): Add support for int and bool tag values.
+        self.lightstep_span.add_join_id(key, str(value))
         return self
 
     def info(self, message, *args):
-        self.traceguide_span.infof(message, *args)
+        self.lightstep_span.infof(message, *args)
         return self
 
     def error(self, message, *args):
-        self.traceguide_span.errorf(message, *args)
+        self.lightstep_span.errorf(message, *args)
         return self
 
 
 class Tracer(opentracing.Tracer):
 
-    def __init__(self, trace_context_source, reporter):
+    def __init__(self, runtime, reporter):
+        self.trace_context_source = TraceContextSource(runtime)
+        self.encoder = TraceContextEncoder()
+        self.decoder = TraceContextDecoder()
         self.reporter = reporter
-        self.trace_context_source = trace_context_source
 
-    # __enter__ and __exit__ are provided by opentracing.Tracer
-
-    def start_trace(self, operation_name, debug=False):
+    def start_trace(self, operation_name, tags=None):
         trace_context = self.trace_context_source.new_root_trace_context()
-        return Span(trace_context, self, self.trace_context_source.runtime.span(operation_name))
+        return Span(trace_context,
+                    self,
+                    self.trace_context_source.runtime.span(operation_name),
+                    tags=tags)
 
-    def join_trace(self, operation_name, parent_trace_context):
-        trace_context, span_tags = self.trace_context_source.new_child_trace_context(parent_trace_context)
-        span = Span(trace_context, self, self.trace_context_source.runtime.span(operation_name))
+    def join_trace(self, operation_name, parent_trace_context, tags=None):
+        trace_context, span_tags = \
+            self.trace_context_source.new_child_trace_context(parent_trace_context)
+        span = Span(trace_context,
+                    self,
+                    self.trace_context_source.runtime.span(operation_name),
+                    tags=tags)
         for key, value in span_tags.iteritems():
-            span.add_tag(str(key), str(value))
+            span.add_tag(key, value)
         return span
 
     def report_span(self, span):
@@ -153,4 +162,20 @@ class Tracer(opentracing.Tracer):
 
     def close(self):
         instrument.flush()
+        self.trace_context_source.close()
         return self.reporter.close()
+
+    # TraceContextSource methods
+    def new_root_trace_context(self):
+        return self.trace_context_source.new_root_trace_context()
+
+    def new_child_trace_context(self, parent_trace_context):
+        return self.trace_context_source.new_child_trace_context(parent_trace_context)
+
+    #TraceContextEncoder methods
+    def trace_context_to_text(self, trace_context):
+        return self.encoder.trace_context_to_text(trace_context)
+
+    #TraceContextDecoder methods
+    def trace_context_from_text(self, trace_context_id, trace_attributes):
+        return self.decoder.trace_context_from_text(trace_context_id, trace_attributes)
