@@ -20,16 +20,16 @@ def add_spans():
     """Calls the opentracing API, doesn't use any LightStep-specific code.
     """
     with opentracing.tracer.start_trace(operation_name='trivial/initial_request') as parent_span:
-        parent_span.add_tag('url', 'localhost')
+        parent_span.set_tag('url', 'localhost')
         sleep_dot()
         parent_span.info('All good here! N=%d, flt=%f, string=%s', 42, 3.14, 'xyz')
-        parent_span.add_tag('span_type', 'parent')
+        parent_span.set_tag('span_type', 'parent')
         sleep_dot()
 
         # This is how you would represent starting work locally.
         with parent_span.start_child(operation_name='trivial/child_request') as child_span:
             child_span.error('Uh Oh! N=%d, flt=%f, string=%s', 42, 3.14, 'xyz')
-            child_span.add_tag('span_type', 'child')
+            child_span.set_tag('span_type', 'child')
             sleep_dot()
 
             # To connect remote calls, pass a trace context down the wire.
@@ -37,7 +37,7 @@ def add_spans():
             with opentracing.tracer.join_trace(operation_name='trivial/remote_span',
                                                parent_trace_context=trace_context) as remote_span:
                 remote_span.info('Remote! N=%d, flt=%f, string=%s', 42, 3.14, 'xyz')
-                remote_span.add_tag('span_type', 'remote')
+                remote_span.set_tag('span_type', 'remote')
                 sleep_dot()
 
 

@@ -103,10 +103,10 @@ class Span(opentracing.Span):
         self.tracer = tracer
         self.update_lock = threading.Lock()
         self.lightstep_span = lightstep_span
-        self.add_tag('trace_id', str(trace_context.trace_id))
+        self.set_tag('trace_id', str(trace_context.trace_id))
         if tags:
             for k, v in tags.iteritems():
-                self.add_tag(k, v)
+                self.set_tag(k, v)
 
     # __enter__ and __exit__ are provided by opentracing.Span
 
@@ -117,7 +117,7 @@ class Span(opentracing.Span):
         self.lightstep_span.end()
         self.tracer.report_span(self)
 
-    def add_tag(self, key, value):
+    def set_tag(self, key, value):
         # TODO(misha): Add support for int and bool tag values.
         self.lightstep_span.add_join_id(key, str(value))
         return self
@@ -154,7 +154,7 @@ class Tracer(opentracing.Tracer):
                     self.trace_context_source.runtime.span(operation_name),
                     tags=tags)
         for key, value in span_tags.iteritems():
-            span.add_tag(key, value)
+            span.set_tag(key, value)
         return span
 
     def report_span(self, span):

@@ -45,10 +45,10 @@ def before_sending_request(request, parent_span):
     else:
         span = parent_span.start_child(operation_name=operation)
 
-    span.add_tag('server.http.url', request.get_full_url())
+    span.set_tag('server.http.url', request.get_full_url())
     host = request.get_host()
     if host:
-        span.add_tag(opentracing.ext.tags.PEER_HOST_IPV4, host)
+        span.set_tag(opentracing.ext.tags.PEER_HOST_IPV4, host)
 
     lightstep.helpers.trace_context_writer(span.trace_context,
                                            opentracing.tracer,
@@ -77,9 +77,9 @@ def before_answering_request(handler, tracer):
 
     host, port = handler.client_address
     if host:
-        span.add_tag(opentracing.ext.tags.PEER_HOST_IPV4, host)
+        span.set_tag(opentracing.ext.tags.PEER_HOST_IPV4, host)
     if port:
-        span.add_tag(opentracing.ext.tags.PEER_PORT, str(port))
+        span.set_tag(opentracing.ext.tags.PEER_PORT, str(port))
 
     return span
 
