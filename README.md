@@ -2,7 +2,6 @@
 
 * [Installation](#installation)
 * [Getting Started](#getting-started)
-* [Common Tasks](#common-tasks)
 
 ## Installation
 
@@ -16,12 +15,12 @@ pip install lightstep
 
 ## Getting Started
 
-LightStep implements [OpenTracing's](http://opentracing.io/) [Python API](https://github.com/opentracing/api-python)
+LightStep implements [The OpenTracing Project's](http://opentracing.io/) [Python API](https://github.com/opentracing/api-python)
 
-Please see the [sample programs](sample/) for examples of how to use this library.
+Please see the [example programs](examples/) for examples of how to use this library.
 In particular:
-* [Trivial Example](sample/trivial/main.py) shows how to use the library on a single host.
-* [Context in Headers](sample/http/context_in_headers.py) shows how to pass a `TraceContext` through `HTTP` headers.
+* [Trivial Example](examples/trivial/main.py) shows how to use the library on a single host.
+* [Context in Headers](examples/http/context_in_headers.py) shows how to pass a `TraceContext` through `HTTP` headers.
 
 Or if your python code is already instrumented for OpenTracing, you can simply switch to LightStep's implementation with:
 
@@ -29,7 +28,6 @@ Or if your python code is already instrumented for OpenTracing, you can simply s
 import lightstep.tracer
 
 lightstep.tracer.init_for_opentracing(access_token='{your_access_token}')
-...
 ```
 
 ## License
