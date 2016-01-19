@@ -15,7 +15,7 @@ pip install lightstep
 
 ## Getting Started
 
-LightStep implements [The OpenTracing Project's](http://opentracing.io/) [Python API](https://github.com/opentracing/api-python)
+LightStep implements [The OpenTracing Project's](http://opentracing.io/) [Python API](https://github.com/opentracing/opentracing-python)
 
 Please see the [example programs](examples/) for examples of how to use this library.
 In particular:
@@ -27,7 +27,7 @@ Or if your python code is already instrumented for OpenTracing, you can simply s
 ```python
 import lightstep.tracer
 
-lightstep.tracer.init_for_opentracing(access_token='{your_access_token}')
+opentracing.tracer = lightstep.tracer.init_tracer(access_token='{your_access_token}')
 ```
 
 ## License

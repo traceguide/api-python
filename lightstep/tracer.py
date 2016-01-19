@@ -1,3 +1,12 @@
+"""
+LightStep's implementation of the python OpenTracing API.
+
+http://opentracing.io
+https://github.com/opentracing/api-python
+
+See the API definition for comments.
+"""
+
 import copy
 import os
 import random
@@ -10,20 +19,15 @@ import opentracing.standard.context
 from . import instrument
 from . import reporter as reporter_module
 
-"""
-LightStep's implementation of the python OpenTracing API.
-http://opentracing.io
-See the API definition for comments.
-"""
 
 FIELD_NAME_TRACE_ID = 'traceid'
-FIELD_NAME_SPAN_ID  = 'spanid'
+FIELD_NAME_SPAN_ID = 'spanid'
 """ Note that these strings are lowercase because HTTP headers mess with capitalization.
 """
 
 MAX_ID_BITS = 63
 
-def init_for_opentracing(*args, **kwargs):
+def init_tracer(*args, **kwargs):
     """ The one command you need to call to start tracing with LightStep in opentracing.
 
     :param bool debug: whether spans should be printed to the console
@@ -42,7 +46,7 @@ def init_for_opentracing(*args, **kwargs):
         reporter = reporter_module.LoggingReporter()
     else:
         reporter = reporter_module.NullReporter()
-    opentracing.tracer = Tracer(instrument.get_runtime(*args, **kwargs), reporter)
+    return Tracer(instrument.get_runtime(*args, **kwargs), reporter)
 
 class TraceContext(opentracing.standard.context.TraceContext):
 
@@ -110,8 +114,8 @@ class Span(opentracing.Span):
 
     # __enter__ and __exit__ are provided by opentracing.Span
 
-    def start_child(self, operation_name):
-        return self.tracer.join_trace(operation_name, self.trace_context)
+    def start_child(self, operation_name, tags=None):
+        return self.tracer.join_trace(operation_name, self.trace_context, tags)
 
     def finish(self):
         self.lightstep_span.end()

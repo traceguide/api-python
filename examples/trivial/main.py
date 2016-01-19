@@ -42,11 +42,11 @@ def add_spans():
 
 
 
-def init_lightstep_from_args(debug=False):
+def lightstep_tracer_from_args(debug=False):
     """Initializes lightstep from the commandline args.
 
     This method should only be called once, future calls should call
-    lightstep.tracer.init_for_opentracing() directly, since the flags will already be saved.
+    lightstep.tracer.init_tracer() directly, since the flags will already be saved.
     (See __main__ block below)
     """
     parser = argparse.ArgumentParser()
@@ -59,7 +59,7 @@ def init_lightstep_from_args(debug=False):
                         default='Trivial-Python-Opentracing')
     args = parser.parse_args()
 
-    lightstep.tracer.init_for_opentracing(
+    return lightstep.tracer.init_tracer(
         debug=debug,
         group_name=args.group_name,
         access_token=args.token,
@@ -77,22 +77,22 @@ if __name__ == '__main__':
         add_spans()
 
     # Use LightStep's opentracing implementation with logging to console
-    init_lightstep_from_args(debug=True)
-    with contextlib.closing(opentracing.tracer):
+    with contextlib.closing(lightstep_tracer_from_args(debug=True)) as impl:
+        opentracing.tracer = impl
         add_spans()
 
     # Use LightStep's opentracing implementation without logging
     # We can skip providing most parameters again since they're all
     # reused, except for debug.
-    lightstep.tracer.init_for_opentracing(debug=False)
-    with contextlib.closing(opentracing.tracer):
+    with contextlib.closing(lightstep.tracer.init_tracer(debug=False)) as impl:
+        opentracing.tracer = impl
         add_spans()
 
     # Use LightStep's opentracing implementation without logging
     # Since the debug param defaults to False, it can be omitted
     # and the other params are omitted because they are ignored after the first call.
-    lightstep.tracer.init_for_opentracing()
-    with contextlib.closing(opentracing.tracer):
+    with contextlib.closing(lightstep.tracer.init_tracer()) as impl:
+        opentracing.tracer = impl
         add_spans()
 
     print 'World!'

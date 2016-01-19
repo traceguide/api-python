@@ -94,11 +94,11 @@ def pick_unused_port():
     return port
 
 
-def init_lightstep_from_args(debug=False):
+def lightstep_tracer_from_args(debug=False):
     """Initializes lightstep from the commandline args.
 
     This method should only be called once, future calls should call
-    lightstep.tracer.init_for_opentracing() directly, since the flags will already be saved.
+    lightstep.tracer.init_tracer() directly, since the flags will already be saved.
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', help='Your LightStep access token.')
@@ -110,7 +110,7 @@ def init_lightstep_from_args(debug=False):
                         default='Python-Opentracing-Remote')
     args = parser.parse_args()
 
-    lightstep.tracer.init_for_opentracing(
+    return lightstep.tracer.init_tracer(
         debug=debug,
         group_name=args.group_name,
         access_token=args.token,
@@ -120,7 +120,7 @@ def init_lightstep_from_args(debug=False):
 
 
 if __name__ == '__main__':
-    init_lightstep_from_args()
+    opentracing.tracer = lightstep_tracer_from_args()
     global _exit_code
     _exit_code = 0
 
