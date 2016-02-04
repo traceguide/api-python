@@ -1,132 +1,20 @@
-""" This is the official Traceguide Instrumentation for Python.
-
-:class:`~Runtime` is the primary class and can be utilized to report logs
-and operations to Traceguide.
-
-:class:`~ActiveSpan` objects are created by the Runtime to store span info.
-TraceJoinIds such as 'end_user_id' can be added to ActiveSpan objects.
+""" This code is used to report traces to LightStep servers.
 """
 
-from atexit import register
-import threading
+import atexit
+import contextlib
 import random
-import time
-import sys
-import ssl
 from socket import error as socket_error
+import ssl
+import sys
+import threading
+import time
+import warnings
 
-import jsonpickle
 from thrift import Thrift
 
 from .crouton import ttypes
 from . import constants, version as cruntime_version, util, connection as conn
-
-# Runtime Singleton
-_singleton_runtime = None
-_singleton_mutex = threading.Lock()
-
-def get_runtime(group_name='',
-                access_token='',
-                secure=True,
-                service_host="api.traceguide.io",
-                service_port=9997,
-                max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
-                max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
-                certificate_verification=True,
-                debugger=None):
-    """ Return singleton instance of the Runtime.
-
-        :param str group_name: name identifying the type of service that
-            is being tracked
-        :param str access_token: project's access token
-        :param bool secure: whether HTTP connection is secure
-        :param str service_host: Service host name
-        :param int service_port: Service port number
-        :param int max_log_records: Maximum number of log records to buffer
-        :param int max_span_records: Maximum number of spans records to buffer
-
-        On the first call to get_runtime provide the listed parameters in order
-        to instantiate and return the singleton. After the first call, all
-        parameters will ignored and the singleton will be returned.
-
-        Note: debugger parameter is for internal testing purposes only.
-    """
-    global _singleton_runtime
-    with _singleton_mutex:
-        if _singleton_runtime is None:
-            _singleton_runtime = Runtime(group_name,
-                                         access_token,
-                                         secure=secure,
-                                         service_host=service_host,
-                                         service_port=service_port,
-                                         max_log_records=max_log_records,
-                                         max_span_records=max_span_records,
-                                         certificate_verification=certificate_verification,
-                                         debugger=debugger)
-        return _singleton_runtime
-
-def initialize(group_name='',
-               access_token='',
-               secure=True,
-               service_host="api.traceguide.io",
-               service_port=9997,
-               max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
-               max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
-               certificate_verification=True,
-               debugger=None):
-    """ Initializes the default runtime
-
-        All calls after the first successful call to this function will be
-        ignored.
-    """
-    get_runtime(group_name,
-                access_token,
-                secure=secure,
-                service_host=service_host,
-                service_port=service_port,
-                max_log_records=max_log_records,
-                max_span_records=max_span_records,
-                certificate_verification=certificate_verification,
-                debugger=debugger)
-
-def span(name):
-    """ Calls span() on the default runtime.
-    """
-    return get_runtime().span(name)
-
-def infof(fmt, *args, **kwargs):
-    """ Calls infof() on the default runtime.
-    """
-    parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.INFO_LOG, False, parsed.get(constants.PAYLOAD),
-                             parsed.get(constants.SPAN_GUID), fmt, args)
-
-def warnf(fmt, *args, **kwargs):
-    """ Calls warnf() on the default runtime.
-    """
-    parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.WARN_LOG, False, parsed.get(constants.PAYLOAD),
-                             parsed.get(constants.SPAN_GUID), fmt, args)
-
-def errorf(fmt, *args, **kwargs):
-    """ Calls errorf() on the default runtime.
-    """
-    parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.ERR_LOG, True, parsed.get(constants.PAYLOAD),
-                             parsed.get(constants.SPAN_GUID), fmt, args)
-
-def fatalf(fmt, *args, **kwargs):
-    """ Calls fatalf() on the default runtime.
-    """
-    parsed = util._parse_level_log_kwargs(**kwargs)
-    get_runtime()._level_log(constants.FATAL_LOG, True, parsed.get(constants.PAYLOAD),
-                             parsed.get(constants.SPAN_GUID), fmt, args)
-
-def flush():
-    """ Calls flush() on the default runtime.
-    """
-    get_runtime().flush()
-
 
 class Runtime(object):
     """ Instances of Runtime are used to sends logs and spans to the server.
@@ -140,22 +28,21 @@ class Runtime(object):
         :param int max_log_records: Maximum number of log records to buffer
         :param int max_span_records: Maximum number of spans records to buffer
         :param bool certificate_verification: if False, will ignore SSL
-            certification verification; intended for debugging purposes only
-
-        Note: debugger parameter is for internal testing purposes only.
+            certification verification (in ALL HTTPS calls, not just in this library)
+            for the lifetime of this process; intended for debugging purposes only
     """
     def __init__(self,
-                 group_name,
-                 access_token,
+                 group_name='',
+                 access_token='',
                  secure=True,
                  service_host="api.traceguide.io",
                  service_port=9997,
                  max_log_records=constants.DEFAULT_MAX_LOG_RECORDS,
                  max_span_records=constants.DEFAULT_MAX_SPAN_RECORDS,
                  certificate_verification=True,
-                 debugger=None):
-
+                 periodic_flush_seconds=constants.FLUSH_PERIOD_SECS):
         if certificate_verification is False:
+            warnings.warn('SSL CERTIFICATE VERIFICATION turned off. ALL FUTURE HTTPS calls will be unverified.')
             ssl._create_default_https_context = ssl._create_unverified_context
 
         # Thrift runtime configuration
@@ -182,198 +69,104 @@ class Runtime(object):
         if self._max_log_records <= 0:
             raise Exception()
 
-        # Only establish timer-based flush if no debugger is provided
-        self._debugger = debugger
-        self._connection = conn._Connection(self._service_url)
-        self._connection._open()
-        self._event = threading.Event()
-        self._flush_thread = threading.Thread(target=self._timed_flush,
-                                              name=constants.FLUSH_THREAD_NAME)
-        self._flush_thread.daemon = True
-        if self._debugger is None:
+        self._disabled_runtime = False
+        atexit.register(self.shutdown)
+
+        self._periodic_flush_seconds = periodic_flush_seconds
+        if self._periodic_flush_seconds <= 0:
+            warnings.warn(
+                ('Runtime(periodic_flush_seconds={}) means we will never flush '
+                 'to lightstep unless explicitly requested.'.format(self._periodic_flush_seconds)))
+            self._periodic_flush_connection = None
+        else:
+            self._periodic_flush_connection = conn._Connection(self._service_url)
+            self._periodic_flush_connection.open()
+            self._flush_thread = threading.Thread(target=self._flush_periodically,
+                                                  name=constants.FLUSH_THREAD_NAME)
+            self._flush_thread.daemon = True
             self._flush_thread.start()
 
-        # Configuration for clean up & runtime disabling
-        register(self.shutdown)
-        self._disabled_runtime = False
-
-    def shutdown(self):
-        """ Shutdown the Runtime's connection by flushing the remaining
+    def shutdown(self, flush=True):
+        """ Shutdown the Runtime's connection by (optionally) flushing the remaining
             logs and spans and then disabling the Runtime.
 
             Note: spans and logs will no longer be reported after shutdown
             is called.
+
+            Returns whether the data was successfully flushed.
         """
+        # Closing connection twice results in an error. Exit early
+        # if runtime has already been disabled.
         if self._disabled_runtime:
-            return
-        self.flush()
-        self.disable()
+            return False
+        self._disabled_runtime = True
 
-    def disable(self):
-        """ Disable the Runtime, such that all calls to the Runtime API
-            become no-ops.
+        if flush:
+            flushed = self._flush_with_new_connection()
 
-            Note: spans and logs will no longer be reported to after disable
-            is called.
-        """
-        # Note: Closing connection twice results in an error. Exit early
-        #       if runtime has already been disabled.
-        if self._disabled_runtime:
-            return
-        with self._mutex:
-            self._event.set()
-            self._connection._close()
-            self._disabled_runtime = True
-            self._log_records = None
-            self._span_records = None
+        if self._periodic_flush_connection:
+            self._periodic_flush_connection.close()
 
-    def infof(self, fmt, *args, **kwargs):
-        """ Log with Info Level.
+        return flushed
 
-            :param str fmt: log statement with formatting, e.g. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-            :param span_guid: optional span_guid to associate log with a span
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._level_log(constants.INFO_LOG, False, parsed.get(constants.PAYLOAD),
-                        parsed.get(constants.SPAN_GUID), fmt, args)
+    def flush(self, connection=None):
+        """ Immediately send unreported data to the server.
 
-    def warnf(self, fmt, *args, **kwargs):
-        """ Log with Warning Level.
-
-            :param str fmt: log statement with formatting, e.g. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-            :param span_guid: optional span_guid to associate log with a span
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._level_log(constants.WARN_LOG, False, parsed.get(constants.PAYLOAD),
-                        parsed.get(constants.SPAN_GUID), fmt, args)
-
-    def errorf(self, fmt, *args, **kwargs):
-        """ Log with Error Level.
-
-            :param str fmt: log statement with formatting, e.g. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-            :param span_guid: optional span_guid to associate log with a span
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._level_log(constants.ERR_LOG, True, parsed.get(constants.PAYLOAD),
-                        parsed.get(constants.SPAN_GUID), fmt, args)
-
-    def fatalf(self, fmt, *args, **kwargs):
-        """ Log with Fatal Level. Leads to program termination.
-
-            :param str fmt: log statement with formatting, e.g. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-            :param span_guid: optional span_guid to associate log with a span
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        fmt_str = self._level_log(constants.FATAL_LOG, True,
-                                  parsed.get(constants.PAYLOAD),
-                                  parsed.get(constants.SPAN_GUID), fmt, args)
-        sys.exit(fmt_str)
-
-    def log(self, log_statement, payload=None, level=None, error_flag=False, span_guid=None):
-        """ Record a log statement with optional payload and importance level.
-
-            :param str logStatement: log text
-            :param payload: an string, int, object, etc. whose serialization
-                will be sent to the server
-            :param str span_guid: associate the log with a specifc span
-                operation by providing a span_guid
-            :param char level: for internal use only
-                importance level of log - 'I' info, 'W' warning, 'E' error,
-                'F' fatal
-            :param bool error_flag: indicates that this log is directly related
-                to an error
-        """
-        if self._disabled_runtime:
-            return
-        timestamp = util._now_micros()
-        guid = self._runtime.guid
-        log_record = ttypes.LogRecord(timestamp, guid, message=log_statement,
-                                      level=level, error_flag=error_flag,
-                                      span_guid=span_guid)
-
-        if payload is not None:
-            try:
-                log_record.payload_json = \
-                    jsonpickle.encode(payload,
-                                      unpicklable=False,
-                                      max_depth=constants.JSON_MAX_DEPTH)
-            except:
-                log_record.payload_json = jsonpickle.encode(constants.JSON_FAIL)
-
-        self._add_log(log_record)
-
-
-    def span(self, name):
-        """ Mark the start of a span operation
-
-            :param str name: the name by which the recording span can
-                be identified
-            :return: ActiveSpan that references the newly initialized span
-            :rtype: ActiveSpan
-        """
-        if self._disabled_runtime:
-            return ActiveSpan(None, None)
-        span_guid = util._generate_guid()
-        runtime_guid = self._runtime.guid
-        timestamp = util._now_micros()
-        join_ids = []
-        span_record = ttypes.SpanRecord(span_guid, runtime_guid, name, join_ids,
-                                        timestamp)
-        return ActiveSpan(self, span_record)
-
-    def flush(self):
-        """ Send unreported data to the server.
-
-            Every few seconds automatic reports are sent to the server.
-            However, one can also manually send reports to the server.
             Calling flush() will ensure that any current unreported data
             will be immediately sent to the host server.
+
+            If connection is not specified, the report will sent to the server passed in to __init__.
+
+            Returns whether the data was successfully flushed.
         """
         if self._disabled_runtime:
-            return
-        if self._debugger is None:
-            connection = conn._Connection(self._service_url)
-            connection._open()
-            self._flush_worker(connection)
-            connection._close()
-        else:
-            self._debug_flush()
+            return False
 
-    def _timed_flush(self):
-        """ Send scheduled report requests to the server.
+        if connection is not None:
+            return self._flush_worker(connection)
+
+        return self._flush_with_new_connection()
+
+    def _flush_with_new_connection(self):
+        """ Flush, starting a new connection first."""
+        with contextlib.closing(conn._Connection(self._service_url)) as connection:
+            connection.open()
+            return self._flush_worker(connection)
+
+    def _flush_periodically(self):
+        """ Periodically send reports to the server.
+
+            Runs in a dedicated daemon thread (self._flush_thread).
         """
-        while not self._event.isSet():
-            if not self._connection._initial_connection_established:
-                self._connection._open()
-            if self._connection._initial_connection_established:
-                time.sleep(constants.FLUSH_PERIOD_SECS)
-                self._flush_worker(self._connection)
+        # Open the connection
+        while not self._disabled_runtime and not self._periodic_flush_connection.ready:
+            time.sleep(self._periodic_flush_seconds)
+            self._periodic_flush_connection.open()
+
+        # Send data until we get disabled
+        while not self._disabled_runtime:
+            self._flush_worker(self._periodic_flush_connection)
+            time.sleep(self._periodic_flush_seconds)
 
     def _flush_worker(self, connection):
         """ Use the given connection to transmit the current logs and spans
             as a report request.
         """
-        if connection._initial_connection_established:
-            report_request = self._construct_report_request()
-            try:
-                resp = connection._client.Report(self._auth, report_request)
-                if resp.commands is None:
-                    return
+        if not connection.ready:
+            return False
+
+        report_request = self._construct_report_request()
+        try:
+            resp = connection.report(self._auth, report_request)
+            if resp.commands is not None:
                 for command in resp.commands:
                     if command.disable:
-                        self.disable()
-            except Thrift.TException:
-                self._store_on_disconnect(report_request)
-            except socket_error:
-                self._store_on_disconnect(report_request)
+                        self.shutdown(flush=False)
+            return True
+
+        except (Thrift.TException, socket_error):
+            self._store_on_disconnect(report_request)
+            return False
 
     def _construct_report_request(self):
         """ Construct a report request.
@@ -385,35 +178,13 @@ class Runtime(object):
             self._log_records = []
             return report
 
-    def _level_log(self, level, error_flag, payload, span_guid, fmt, *args):
-        """ Logging with levels.
+    def _add_log(self, log):
+        """ Safely add a log to the buffer.
+
+        Will delete a previously-added log if the limit has been reached.
         """
         if self._disabled_runtime:
             return
-        try:
-            # Since the args are passed down from an encapsulating package
-            # they are packaged within a tuple so that args is a tuple of
-            # n values within a tuple. To extract the tuple of n values select
-            # the first element of the encapsulating tuple.
-            fmt_str = fmt % args[0]
-        except TypeError:
-            fmt_str = ':'.join(['[INVALID FORMAT STRING]', fmt])
-
-        merged = {}
-        if len(args[0]) > 0:
-            merged['arguments'] = list(args[0])
-        if payload != None:
-            merged['payload'] = payload
-        if len(merged) == 0:
-            merged = None
-
-        self.log(fmt_str, merged, level, error_flag, span_guid)
-        return fmt_str
-
-    def _add_log(self, log):
-        """ Safely add a log to the buffer. Throw out logs if the limit has
-            been reached.
-        """
         with self._mutex:
             current_len = len(self._log_records)
             if current_len >= self._max_log_records:
@@ -423,9 +194,12 @@ class Runtime(object):
                 self._log_records.append(log)
 
     def _add_span(self, span):
-        """ Safely add a span to the buffer. Throw out spans if the liit has
-            been reached.
+        """ Safely add a span to the buffer.
+
+        Will delete a previously-added span if the limit has been reached.
         """
+        if self._disabled_runtime:
+            return
         with self._mutex:
             current_len = len(self._span_records)
             if len(self._span_records) >= self._max_span_records:
@@ -442,122 +216,3 @@ class Runtime(object):
             self._add_log(log)
         for span in report_request.span_records:
             self._add_span(span)
-
-    def _debug_flush(self):
-        """ Send report request to debugger.
-        """
-        report_request = self._construct_report_request()
-        self._debugger.Report(report_request)
-
-class ActiveSpan(object):
-    """ Wrapper class for thrift span_record.
-
-        Can also be used as a context manager, like so:
-        >>> with instrument.span("subsystem/my_operation) as span:
-        ...   span.add_join_id(...)
-    """
-    def __init__(self, runtime, span_record):
-        self._runtime = runtime
-        self._span_record = span_record
-        if span_record is not None:
-            self.span_guid = span_record.span_guid
-        else:
-            self.span_guid = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if exc_type:
-            self.errorf('Uncaught exception thrown in span: %s, %s', exc_type, exc_value)
-        self.end()
-        return False  # A True would suppress the exeception
-
-    def guid(self):
-        """ Return the GUID of the active span
-
-            :return: the string guid of the active span
-        """
-        if self._span_record is None:
-            return ""
-        return self._span_record.span_guid
-
-    def add_join_id(self, key, val):
-        """ Add a JoinID to the active span.
-
-            :param str key: type of id, for example 'end_user_id'
-            :param str value: id, for example 'John'
-        """
-        if self._runtime is None:
-            return
-        if self._span_record is None:
-            return
-        trace_join_id = ttypes.TraceJoinId(key, val)
-        self._span_record.join_ids.append(trace_join_id)
-
-    def end(self):
-        """ End the active span so that it can be reported to the server
-
-            :return: whether span recording successfully ended
-            :rtype: bool
-        """
-        if self._runtime is None:
-            return False
-        if self._span_record is None:
-            return False
-        self._span_record.youngest_micros = util._now_micros()
-        self._runtime._add_span(self._span_record)
-        return True
-
-    def infof(self, fmt, *args, **kwargs):
-        """ Log with Info Level. Log is sent attached to the span.
-
-            :param str fmt: log statement with formatting, i.e. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._runtime._level_log(constants.INFO_LOG, False,
-                                 parsed.get(constants.PAYLOAD),
-                                 self.span_guid, fmt, args)
-
-    def warnf(self, fmt, *args, **kwargs):
-        """ Log with Warning Level. Log is sent attached to the span.
-
-            :param str fmt: log statement with formatting, i.e. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._runtime._level_log(constants.WARN_LOG, False,
-                                 parsed.get(constants.PAYLOAD),
-                                 self.span_guid, fmt, args)
-
-    def errorf(self, fmt, *args, **kwargs):
-        """ Log with Error Level. Log is sent attached to the span.
-
-            :param str fmt: log statement with formatting, i.e. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._span_record.error_flag = True
-        self._runtime._level_log(constants.ERR_LOG, True,
-                                 parsed.get(constants.PAYLOAD),
-                                 self.span_guid, fmt, args)
-
-    def fatalf(self, fmt, *args, **kwargs):
-        """ Log with Fatal Level. Leads to program termination.
-            Log is sent attached to the span.
-
-            :param str fmt: log statement with formatting, i.e. 'log from %s'
-            :param args: args for formatted string
-            :param payload: optional payload
-        """
-        parsed = util._parse_level_log_kwargs(**kwargs)
-        self._span_record.error_flag = True
-        fmt_str = self._runtime._level_log(constants.FATAL_LOG, True,
-                                           parsed.get(constants.PAYLOAD),
-                                           self.span_guid, fmt, args)
-        sys.exit(fmt_str)

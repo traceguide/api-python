@@ -14,7 +14,7 @@ SPAN_GUID = 'span_guid'
 # Log Levels
 INFO_LOG = 'I'
 WARN_LOG = 'W'
-ERR_LOG = 'E'
+ERROR_LOG = 'E'
 FATAL_LOG = 'F'
 
 # JSON pickle settings

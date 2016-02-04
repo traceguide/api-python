@@ -42,12 +42,8 @@ def add_spans():
 
 
 
-def lightstep_tracer_from_args(debug=False):
+def lightstep_tracer_from_args():
     """Initializes lightstep from the commandline args.
-
-    This method should only be called once, future calls should call
-    lightstep.tracer.init_tracer() directly, since the flags will already be saved.
-    (See __main__ block below)
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', help='Your LightStep access token.')
@@ -55,17 +51,25 @@ def lightstep_tracer_from_args(debug=False):
                         default='localhost')
     parser.add_argument('--port', help='The LightStep reporting service port.',
                         type=int, default=9997)
+    parser.add_argument('--use_tls', help='Whether to use TLS for reporting',
+                        type=bool, default=False)
     parser.add_argument('--group-name', help='The LightStep runtime group',
-                        default='Trivial-Python-Opentracing')
+                        default='Python-Opentracing-Remote')
     args = parser.parse_args()
 
-    return lightstep.tracer.init_tracer(
-        debug=debug,
-        group_name=args.group_name,
-        access_token=args.token,
-        service_host=args.host,
-        service_port=args.port,
-        certificate_verification=False)
+    if args.use_tls:
+	return lightstep.tracer.init_tracer(
+	    group_name=args.group_name,
+	    access_token=args.token,
+	    service_host=args.host,
+	    service_port=args.port)
+    else:
+	return lightstep.tracer.init_tracer(
+	    group_name=args.group_name,
+	    access_token=args.token,
+	    service_host=args.host,
+	    service_port=args.port,
+	    secure=False)
 
 
 if __name__ == '__main__':
@@ -76,22 +80,13 @@ if __name__ == '__main__':
         opentracing.tracer = impl
         add_spans()
 
-    # Use LightStep's opentracing implementation with logging to console
-    with contextlib.closing(lightstep_tracer_from_args(debug=True)) as impl:
+    #Use LightStep's debug tracer, which logs to the console instead of reporting to LightStep.
+    with contextlib.closing(lightstep.tracer.init_debug_tracer()) as impl:
         opentracing.tracer = impl
         add_spans()
 
-    # Use LightStep's opentracing implementation without logging
-    # We can skip providing most parameters again since they're all
-    # reused, except for debug.
-    with contextlib.closing(lightstep.tracer.init_tracer(debug=False)) as impl:
-        opentracing.tracer = impl
-        add_spans()
-
-    # Use LightStep's opentracing implementation without logging
-    # Since the debug param defaults to False, it can be omitted
-    # and the other params are omitted because they are ignored after the first call.
-    with contextlib.closing(lightstep.tracer.init_tracer()) as impl:
+    # Use LightStep's opentracing implementation
+    with contextlib.closing(lightstep_tracer_from_args()) as impl:
         opentracing.tracer = impl
         add_spans()
 

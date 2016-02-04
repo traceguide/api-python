@@ -27,14 +27,14 @@ def _now_micros():
     """
     return int(round(time.time() * constants.SECONDS_TO_MICRO))
 
-def _parse_level_log_kwargs(**kwargs):
-    """ Parse kwargs for level logs into a dict.
+def _merge_dicts(*dict_args):
+    """Destructively merges dictionaries, returns None instead of an empty dictionary.
+
+    Elements of dict_args can be None.
+    Keys in latter dicts override those in earlier ones.
     """
-    parsed_kwargs = {}
-    if kwargs is not None:
-        for key, val in kwargs.iteritems():
-            if key == constants.PAYLOAD:
-                parsed_kwargs[constants.PAYLOAD] = val
-            elif key == constants.span_guid:
-                parsed_kwargs[constants.span_guid] = val
-    return parsed_kwargs
+    result = {}
+    for dictionary in dict_args:
+        if dictionary:
+            result.update(dictionary)
+    return result if result else None

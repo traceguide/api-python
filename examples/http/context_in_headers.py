@@ -94,11 +94,8 @@ def pick_unused_port():
     return port
 
 
-def lightstep_tracer_from_args(debug=False):
+def lightstep_tracer_from_args():
     """Initializes lightstep from the commandline args.
-
-    This method should only be called once, future calls should call
-    lightstep.tracer.init_tracer() directly, since the flags will already be saved.
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', help='Your LightStep access token.')
@@ -106,17 +103,25 @@ def lightstep_tracer_from_args(debug=False):
                         default='localhost')
     parser.add_argument('--port', help='The LightStep reporting service port.',
                         type=int, default=9997)
+    parser.add_argument('--use_tls', help='Whether to use TLS for reporting',
+                        type=bool, default=False)
     parser.add_argument('--group-name', help='The LightStep runtime group',
                         default='Python-Opentracing-Remote')
     args = parser.parse_args()
 
-    return lightstep.tracer.init_tracer(
-        debug=debug,
-        group_name=args.group_name,
-        access_token=args.token,
-        service_host=args.host,
-        service_port=args.port,
-        certificate_verification=False)
+    if args.use_tls:
+	return lightstep.tracer.init_tracer(
+	    group_name=args.group_name,
+	    access_token=args.token,
+	    service_host=args.host,
+	    service_port=args.port)
+    else:
+	return lightstep.tracer.init_tracer(
+	    group_name=args.group_name,
+	    access_token=args.token,
+	    service_host=args.host,
+	    service_port=args.port,
+	    secure=False)
 
 
 if __name__ == '__main__':
